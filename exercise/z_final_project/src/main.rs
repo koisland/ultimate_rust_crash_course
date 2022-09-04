@@ -25,6 +25,10 @@
 //
 //     let positive_number: u32 = some_string.parse().expect("Failed to parse a number");
 
+use std::thread;
+use::clap::{Arg, App, SubCommand};
+use image::{DynamicImage};
+
 fn main() {
     // 1. First, you need to implement some basic command-line argument handling
     // so you can make your program do different things.  Here's a little bit
@@ -32,123 +36,170 @@ fn main() {
     //
     // Challenge: If you're feeling really ambitious, you could delete this code
     // and use the "clap" library instead: https://docs.rs/clap/2.32.0/clap/
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() {
-        print_usage_and_exit();
+
+    let args = App::new("imager")
+        .arg(
+            Arg::with_name("input")
+            .short("i")
+            .help("Input files.")
+            .multiple(true)
+            .takes_value(true)
+            .required(true)
+        )
+        .arg(
+            Arg::with_name("output")
+            .short("o")
+            .help("Output files.")
+            .multiple(true)
+            .takes_value(true)
+            .required(true)
+        )
+        .arg(
+            Arg::with_name("blur")
+            .short("b")
+            .long("blur")
+            .help("Blur image by some amount. [float]")
+            .takes_value(true)
+            .number_of_values(1)
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("brighten")
+            .short("a")
+            .long("brighten")
+            .help("Brighten image by some amount. [integer]")
+            .takes_value(true)
+            .number_of_values(1)
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("crop")
+            .short("c")
+            .long("crop")
+            .help("Crop image. Takes dimensions: x, y, w, and h. [uinteger]")
+            .takes_value(true)
+            .number_of_values(4)
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("rotate")
+            .short("r")
+            .long("rotate")
+            .help("Rotate image.")
+            .takes_value(true)
+            .number_of_values(1)
+            .possible_values(&["90", "180", "270"])
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("invert")
+            .short("v")
+            .long("invert")
+            .help("Invert image.")
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("grayscale")
+            .short("g")
+            .long("grayscale")
+            .help("Grayscale image.")
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("fractal")
+            .short("f")
+            .long("fractal")
+            .help("Make fractal.")
+            .required(false)
+        )
+        .arg(
+            Arg::with_name("generate")
+            .short("n")
+            .long("gen")
+            .help("Generate image.")
+            .required(false)
+        )
+        .get_matches_safe()
+        .unwrap_or_else(|e| e.exit() );
+    
+    let inputs: Vec<&str> = args.values_of("input").unwrap().collect();
+    let outputs: Vec<&str> = args.values_of("output").unwrap().collect();
+
+    if inputs.len() != outputs.len() {
+        println!("Inputs must be same length as outputs.");
+        std::process::exit(-1);
     }
-    let subcommand = args.remove(0);
-    match subcommand.as_str() {
-        // EXAMPLE FOR CONVERSION OPERATIONS
-        "blur" => {
-            if args.len() != 2 {
-                print_usage_and_exit();
-            }
-            let infile = args.remove(0);
-            let outfile = args.remove(0);
-            // **OPTION**
-            // Improve the blur implementation -- see the blur() function below
-            blur(infile, outfile);
-        }
+    
+    for (input_file, output_file) in inputs.iter().zip(outputs) {
+        let mut img = image::open(input_file).expect("Failed to open INFILE.");
+        // blur image
+        
+        if args.is_present("blur") {
+            let blur_amt: f32 = args.value_of("blur")
+                .unwrap()
+                .parse::<f32>()
+                .expect("Unable to convert blur amount to float.");
+            img = blur(img, blur_amt);
+        };
+        if args.is_present("brighten") {
+            let brighten_amt: i32 = args.value_of("brighten")
+                .unwrap()
+                .parse::<i32>()
+                .expect("Unable to convert brighten amount to integer.");
+            img = brighten(img, brighten_amt);
+        };
+        if args.is_present("crop") {
+            let crop_dims: Vec<u32> = args.values_of("crop")
+                .unwrap()
+                .map(|dim| dim.parse().expect("Unable to convert to u32."))
+                .collect();
+            img = crop(img, crop_dims);
+        };
+        if args.is_present("rotate") {
+            let rot_angle: i32 = args.value_of("rotate")
+                .unwrap()
+                .parse::<i32>()
+                .expect("Unable to coerce rotation angle to integer.");
+            img = rotate(img, rot_angle);
+        };
 
-        // **OPTION**
-        // Brighten -- see the brighten() function below
-
-        // **OPTION**
-        // Crop -- see the crop() function below
-
-        // **OPTION**
-        // Rotate -- see the rotate() function below
-
-        // **OPTION**
-        // Invert -- see the invert() function below
-
-        // **OPTION**
-        // Grayscale -- see the grayscale() function below
-
-        // A VERY DIFFERENT EXAMPLE...a really fun one. :-)
-        "fractal" => {
-            if args.len() != 1 {
-                print_usage_and_exit();
-            }
-            let outfile = args.remove(0);
-            fractal(outfile);
-        }
-
-        // **OPTION**
-        // Generate -- see the generate() function below -- this should be sort of like "fractal()"!
-
-        // For everything else...
-        _ => {
-            print_usage_and_exit();
-        }
+        img.save(output_file).expect("Unable to save file.");
+        println!("Finished processing {} into {}...", input_file, output_file);    
     }
 }
 
-fn print_usage_and_exit() {
-    println!("USAGE (when in doubt, use a .png extension on your filenames)");
-    println!("blur INFILE OUTFILE");
-    println!("fractal OUTFILE");
-    // **OPTION**
-    // Print useful information about what subcommands and arguments you can use
-    // println!("...");
-    std::process::exit(-1);
+fn blur(mut in_img: DynamicImage, blur_amt: f32) -> DynamicImage {
+    in_img.blur(blur_amt)
 }
 
-fn blur(infile: String, outfile: String) {
-    // Here's how you open an existing image file
-    let img = image::open(infile).expect("Failed to open INFILE.");
-    // **OPTION**
-    // Parse the blur amount (an f32) from the command-line and pass it through
-    // to this function, instead of hard-coding it to 2.0.
-    let img2 = img.blur(2.0);
-    // Here's how you save an image to a file.
-    img2.save(outfile).expect("Failed writing OUTFILE.");
+fn brighten(mut in_img: DynamicImage, brighten_amt: i32) -> DynamicImage {
+    in_img.brighten(brighten_amt)
 }
 
-fn brighten(infile: String, outfile: String) {
-    // See blur() for an example of how to open / save an image.
-
-    // .brighten() takes one argument, an i32.  Positive numbers brighten the
-    // image. Negative numbers darken it.  It returns a new image.
-
-    // Challenge: parse the brightness amount from the command-line and pass it
-    // through to this function.
+fn crop(mut in_img: DynamicImage, crop_dims: Vec<u32>) -> DynamicImage {
+    let (x, y, width, height) = (crop_dims[0], crop_dims[1], crop_dims[2], crop_dims[3]);
+    in_img.crop(x, y, width, height)
 }
 
-fn crop(infile: String, outfile: String) {
-    // See blur() for an example of how to open an image.
-
-    // .crop() takes four arguments: x: u32, y: u32, width: u32, height: u32
-    // You may hard-code them, if you like.  It returns a new image.
-
-    // Challenge: parse the four values from the command-line and pass them
-    // through to this function.
-
-    // See blur() for an example of how to save the image.
+fn rotate(mut in_img: DynamicImage, rotation: i32) -> DynamicImage {
+    let rot_img = match rotation {
+        90 => in_img.rotate90(),
+        180 => in_img.rotate180(),
+        270 => in_img.rotate270(),
+        _ => in_img
+    };
+    rot_img
 }
 
-fn rotate(infile: String, outfile: String) {
-    // See blur() for an example of how to open an image.
-
-    // There are 3 rotate functions to choose from (all clockwise):
-    //   .rotate90()
-    //   .rotate180()
-    //   .rotate270()
-    // All three methods return a new image.  Pick one and use it!
-
-    // Challenge: parse the rotation amount from the command-line, pass it
-    // through to this function to select which method to call.
-
-    // See blur() for an example of how to save the image.
-}
-
-fn invert(infile: String, outfile: String) {
+fn invert(mut in_img: DynamicImage) -> DynamicImage {
     // See blur() for an example of how to open an image.
 
     // .invert() takes no arguments and converts the image in-place, so you
     // will use the same image to save out to a different file.
 
     // See blur() for an example of how to save the image.
+    in_img.invert();
+    in_img
 }
 
 fn grayscale(infile: String, outfile: String) {
