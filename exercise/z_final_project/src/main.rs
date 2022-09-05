@@ -26,8 +26,8 @@
 //     let positive_number: u32 = some_string.parse().expect("Failed to parse a number");
 
 use std::thread;
-use::clap::{Arg, App, SubCommand};
-use image::{DynamicImage};
+use::clap::{Arg, App};
+use image::{DynamicImage, ImageBuffer, Rgb};
 
 fn main() {
     // 1. First, you need to implement some basic command-line argument handling
@@ -44,7 +44,6 @@ fn main() {
             .help("Input files.")
             .multiple(true)
             .takes_value(true)
-            .required(true)
         )
         .arg(
             Arg::with_name("output")
@@ -52,7 +51,6 @@ fn main() {
             .help("Output files.")
             .multiple(true)
             .takes_value(true)
-            .required(true)
         )
         .arg(
             Arg::with_name("blur")
@@ -116,24 +114,59 @@ fn main() {
             Arg::with_name("generate")
             .short("n")
             .long("gen")
-            .help("Generate image.")
+            .takes_value(true)
+            .number_of_values(3)
+            .help("Generate image. Values are rgb of bg [uinteger]")
             .required(false)
         )
         .get_matches_safe()
         .unwrap_or_else(|e| e.exit() );
     
-    let inputs: Vec<&str> = args.values_of("input").unwrap().collect();
-    let outputs: Vec<&str> = args.values_of("output").unwrap().collect();
+    if args.is_present("generate") {
+        let bg: Vec<u8> = args.values_of("generate")
+            .unwrap()
+            .map(|dim| dim.parse().expect("Unable to convert to u8."))
+            .collect();
+        let gen_img = generate(bg);
+        
+        let def_fname: &str;
+        if let Some(output_path) = args.value_of("output") {
+            def_fname = output_path;
+        } else {
+            def_fname = "gen_bg.jpg";
+            println!("{} {}.", "No output path provided. Defaulting to", &def_fname);
+        }
+
+        gen_img.save(def_fname).expect("Unable to save file.");
+        // Exit before image ops.
+        std::process::exit(0);
+
+    } else if args.is_present("fractal") {
+        let fractal_img = fractal();
+
+        let def_fname: &str;
+        if let Some(output_path) = args.value_of("output") {
+            def_fname = output_path;
+        } else {
+            def_fname = "fractal.jpg";
+            println!("{} {}.", "No output path provided. Defaulting to", &def_fname);
+        }
+        fractal_img.save(def_fname).expect("Unable to save file.");
+        // Exit before image ops.
+        std::process::exit(0);
+    }
+    
+    let inputs: Vec<&str> = args.values_of("input").expect("No inputs provided.").collect();
+    let outputs: Vec<&str> = args.values_of("output").expect("No outputs provided.").collect();
 
     if inputs.len() != outputs.len() {
         println!("Inputs must be same length as outputs.");
         std::process::exit(-1);
     }
-    
+
     for (input_file, output_file) in inputs.iter().zip(outputs) {
         let mut img = image::open(input_file).expect("Failed to open INFILE.");
-        // blur image
-        
+    
         if args.is_present("blur") {
             let blur_amt: f32 = args.value_of("blur")
                 .unwrap()
@@ -162,7 +195,12 @@ fn main() {
                 .expect("Unable to coerce rotation angle to integer.");
             img = rotate(img, rot_angle);
         };
-
+        if args.is_present("invert") {
+            img = invert(img);
+        };
+        if args.is_present("grayscale") {
+            img = grayscale(img);
+        }
         img.save(output_file).expect("Unable to save file.");
         println!("Finished processing {} into {}...", input_file, output_file);    
     }
@@ -192,41 +230,33 @@ fn rotate(mut in_img: DynamicImage, rotation: i32) -> DynamicImage {
 }
 
 fn invert(mut in_img: DynamicImage) -> DynamicImage {
-    // See blur() for an example of how to open an image.
-
-    // .invert() takes no arguments and converts the image in-place, so you
-    // will use the same image to save out to a different file.
-
-    // See blur() for an example of how to save the image.
     in_img.invert();
     in_img
 }
 
-fn grayscale(infile: String, outfile: String) {
-    // See blur() for an example of how to open an image.
-
-    // .grayscale() takes no arguments. It returns a new image.
-
-    // See blur() for an example of how to save the image.
+fn grayscale(mut in_img: DynamicImage) -> DynamicImage {
+    in_img.grayscale();
+    in_img
 }
 
-fn generate(outfile: String) {
+fn generate(bg_rgb: Vec<u8>) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     // Create an ImageBuffer -- see fractal() for an example
-
+    let (bg_red, bg_green,  bg_blue) = (bg_rgb[0], bg_rgb[1], bg_rgb[2]);
     // Iterate over the coordinates and pixels of the image -- see fractal() for an example
+    let width = 800;
+    let height = 800;
 
-    // Set the image to some solid color. -- see fractal() for an example
+    let mut imgbuf = image::ImageBuffer::new(width, height);
 
-    // Challenge: parse some color data from the command-line, pass it through
-    // to this function to use for the solid color.
-
-    // Challenge 2: Generate something more interesting!
-
-    // See blur() for an example of how to save the image
+    for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
+        // Actually set the pixel. red, green, and blue are u8 values!
+        *pixel = image::Rgb([bg_red, bg_green, bg_blue]);
+    }
+    imgbuf
 }
 
 // This code was adapted from https://github.com/PistonDevelopers/image
-fn fractal(outfile: String) {
+fn fractal() -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     let width = 800;
     let height = 800;
 
@@ -258,7 +288,7 @@ fn fractal(outfile: String) {
         *pixel = image::Rgb([red, green, blue]);
     }
 
-    imgbuf.save(outfile).unwrap();
+    imgbuf
 }
 
 // **SUPER CHALLENGE FOR LATER** - Let's face it, you don't have time for this during class.
